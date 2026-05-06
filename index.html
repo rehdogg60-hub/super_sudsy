@@ -5,59 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Super Sudsy</title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body {
-            background: #0a0a1f;
-            overflow: hidden;
-            font-family: 'Arial Black', Arial, sans-serif;
-            touch-action: none;
-        }
-        canvas {
-            display: block;
-            margin: 10px auto;
-            border: 8px solid #ffd700;
-            border-radius: 12px;
-            box-shadow: 0 0 40px #ffd700;
-            max-width: 100%;
-            height: auto;
-        }
+        body { margin:0; background:#0a0a1f; overflow:hidden; font-family:Arial; }
+        canvas { display:block; margin:10px auto; border:6px solid #ffd700; border-radius:12px; }
         .controls {
-            position: fixed;
-            bottom: 15px;
-            left: 15px;
-            right: 15px;
-            display: none;
-            justify-content: space-between;
-            z-index: 100;
+            position:fixed; bottom:20px; left:0; right:0; display:flex; justify-content:space-between; padding:0 20px; z-index:100;
         }
         .btn {
-            pointer-events: all;
-            background: rgba(255, 215, 0, 0.3);
-            color: white;
-            border: 5px solid #ffd700;
-            border-radius: 50%;
-            width: 78px;
-            height: 78px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 36px;
-        }
-        .jump { background: rgba(0, 221, 255, 0.4); border-color: #00ddff; }
-        @media (max-width: 900px) {
-            .controls { display: flex; }
+            width:80px; height:80px; background:rgba(255,215,0,0.3); border:5px solid #ffd700;
+            border-radius:50%; color:white; font-size:40px; display:flex; align-items:center; justify-content:center;
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
 
-    <div class="controls" id="mobileControls">
-        <div style="display:flex; gap:12px;">
-            <div class="btn" id="leftBtn">←</div>
-            <div class="btn" id="rightBtn">→</div>
+    <div class="controls" id="controls">
+        <div style="display:flex; gap:15px;">
+            <div class="btn" id="left">←</div>
+            <div class="btn" id="right">→</div>
         </div>
-        <div class="btn jump" id="jumpBtn">↑</div>
+        <div class="btn" id="jump" style="background:rgba(0,221,255,0.4); border-color:#00ddff;">↑</div>
     </div>
 
     <script>
@@ -65,87 +32,38 @@
         const ctx = canvas.getContext('2d');
 
         function resize() {
-            const maxW = Math.min(window.innerWidth * 0.95, 900);
-            canvas.width = maxW;
-            canvas.height = maxW * (5/9);   // Maintain 900:500 ratio
+            canvas.width = Math.min(window.innerWidth - 20, 800);
+            canvas.height = 450;
         }
-        window.addEventListener('resize', resize);
         resize();
+        window.addEventListener('resize', resize);
 
-        let gameState = "title";
+        let x = 100, y = 300, dx = 0, dy = 0, grounded = true;
+        let touchLeft = false, touchRight = false;
 
-        // ============== AUDIO ==============
-        let audioCtx;
-        function playSound(type) {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain).connect(audioCtx.destination);
-            // ... (your sound logic) ...
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.4);
-        }
-
-        // ============== PLAYER ==============
-        const player = { x: 80, y: 200, width: 70, height: 100, dx: 0, dy: 0, speed: 6, jumpPower: -15, grounded: false, health: 3 };
-
-        const playerImg = new Image();
-        playerImg.src = 'rehdogg-hero.PNG';
-
-        let score = 0;
-        let keys = {};
-        let touchLeft = false, touchRight = false, speedBoost = 1;
-
-        // Simple platforms for testing
-        const platforms = [
-            { x: 0, y: canvas.height - 60, width: canvas.width * 0.6, height: 60 },
-            { x: 550, y: canvas.height - 180, width: 250, height: 30 },
-        ];
-
-        window.addEventListener('keydown', e => keys[e.code] = true);
-        window.addEventListener('keyup', e => keys[e.code] = false);
-
-        // Mobile Controls
-        function setupControls() {
-            document.getElementById('leftBtn').addEventListener('touchstart', e => {e.preventDefault(); touchLeft = true;});
-            document.getElementById('leftBtn').addEventListener('touchend', () => touchLeft = false);
-            document.getElementById('rightBtn').addEventListener('touchstart', e => {e.preventDefault(); touchRight = true;});
-            document.getElementById('rightBtn').addEventListener('touchend', () => touchRight = false);
-            document.getElementById('jumpBtn').addEventListener('touchstart', e => {
-                e.preventDefault();
-                if (player.grounded) {
-                    player.dy = player.jumpPower;
-                    player.grounded = false;
-                }
-            });
-        }
+        // Controls
+        document.getElementById('left').addEventListener('touchstart', () => touchLeft = true);
+        document.getElementById('left').addEventListener('touchend', () => touchLeft = false);
+        document.getElementById('right').addEventListener('touchstart', () => touchRight = true);
+        document.getElementById('right').addEventListener('touchend', () => touchRight = false);
+        document.getElementById('jump').addEventListener('touchstart', () => {
+            if (grounded) { dy = -15; grounded = false; }
+        });
 
         function update() {
-            if (gameState !== "playing") {
-                draw();
-                requestAnimationFrame(update);
-                return;
-            }
-
             // Movement
-            if (keys['KeyD'] || keys['ArrowRight'] || touchRight) player.dx = player.speed;
-            else if (keys['KeyA'] || keys['ArrowLeft'] || touchLeft) player.dx = -player.speed;
-            else player.dx *= 0.8;
+            if (touchRight || keys && keys['KeyD']) dx = 6;
+            else if (touchLeft || keys && keys['KeyA']) dx = -6;
+            else dx *= 0.8;
 
-            if ((keys['Space'] || keys['KeyW']) && player.grounded) {
-                player.dy = player.jumpPower;
-                player.grounded = false;
-            }
+            dy += 0.8;           // gravity
+            x += dx;
+            y += dy;
 
-            player.dy += 0.6;
-            player.x += player.dx;
-            player.y += player.dy;
-
-            // Ground
-            if (player.y + player.height > canvas.height - 60) {
-                player.y = canvas.height - 60 - player.height;
-                player.dy = 0;
-                player.grounded = true;
+            if (y > canvas.height - 80) {
+                y = canvas.height - 80;
+                dy = 0;
+                grounded = true;
             }
 
             draw();
@@ -156,49 +74,25 @@
             ctx.fillStyle = '#16213e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            if (gameState === "title") {
-                ctx.fillStyle = '#ffd700';
-                ctx.font = 'bold 60px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('SUPER SUDSY', canvas.width/2, 180);
-                ctx.font = 'bold 28px Arial';
-                ctx.fillText('TAP or PRESS SPACE TO START', canvas.width/2, 280);
-                return;
-            }
-
-            // Platforms
+            // Ground
             ctx.fillStyle = '#555';
-            platforms.forEach(p => ctx.fillRect(p.x, p.y, p.width, p.height));
+            ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
 
             // Player
             ctx.fillStyle = '#00ccff';
-            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillRect(x, y, 60, 80);
 
-            // Score
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 24px Arial';
-            ctx.fillText(`Score: ${score}`, 20, 40);
+            ctx.font = '20px Arial';
+            ctx.fillText('Super Sudsy Test', 20, 40);
         }
 
-        // Start Game
-        function startGame() {
-            gameState = "playing";
-            player.x = 80;
-            player.y = 200;
-        }
+        // Keyboard support
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
 
-        window.addEventListener('keydown', e => {
-            if (gameState === "title" && e.code === "Space") startGame();
-        });
-
-        // Click/Tap to start
-        canvas.addEventListener('click', () => {
-            if (gameState === "title") startGame();
-        });
-
-        setupControls();
-        draw();                    // Show title immediately
-        update();                  // Start loop
+        update();   // Start the game
     </script>
 </body>
 </html>
