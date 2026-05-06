@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Super Sudsy</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0a0a1f;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Arial Black', Arial, sans-serif;
+        }
+        canvas {
+            background: linear-gradient(#1a1a2e, #0f3460);
+            border: 5px solid #ffd700;
+            border-radius: 12px;
+            box-shadow: 0 0 40px rgba(255, 215, 0, 0.6);
+        }
+        .ui {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #ffd700;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 10;
+        }
+        #score {
+            position: absolute;
+            top: 55px;
+            left: 15px;
+            color: white;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 10;
+        }
+        #musicControls {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            color: #ffd700;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <audio id="bgMusic" loop>
+        <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 900;
+        canvas.height = 500;
+
+        const gravity = 0.6;
+        const friction = 0.85;
+        let gameState = "title"; // title, playing, gameover
+
+        // Audio
+        const bgMusic = document.getElementById('bgMusic');
+        let audioCtx;
+        let musicMuted = false;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playSound(type) {
+            if (musicMuted || gameState !== "playing") return;
+            initAudio();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            switch(type) {
+                case "jump": osc.type = "sawtooth"; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.3); gain.gain.value = 0.4; break;
+                case "stomp": osc.type = "square"; osc.frequency.setValueAtTime(180, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.2); gain.gain.value = 0.6; break;
+                case "hurt": osc.type = "sawtooth"; osc.frequency.setValueAtTime(400, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.6); gain.gain.value = 0.5; break;
+                case "powerup": osc.type = "sine"; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(1600, audioCtx.currentTime + 0.4); gain.gain.value = 0.5; break;
+                case "shoot": osc.type = "square"; osc.frequency.setValueAtTime(650, audioCtx.currentTime); gain.gain.value = 0.25; break;
+            }
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.7);
+        }
+
+        function toggleMusic() {
+            musicMuted = !musicMuted;
+            bgMusic.volume = musicMuted ? 0 : 0.45;
+        }
+
+        // Player
+        const player = { x: 100, y: 300, width: 80, height: 110, dx: 0, dy: 0, speed: 6, jumpPower: -15,
+            grounded: false, invincible: false, invincibleTime: 0, health: 3 };
+
+        const playerImg = new Image();
+        playerImg.src = 'rehdogg-hero.PNG';
+
+        let score = 0;
+        let highScore = 0;
+
+        const platforms = [
+            { x: 0, y: canvas.height - 60, width: canvas.width * 0.6, height: 60 },
+            { x: 650, y: canvas.height - 180, width: 250, height: 30 },
+            { x: 200, y: canvas.height - 250, width: 180, height: 25 },
+            { x: 450, y: canvas.height - 320, width: 140, height: 25 },
+        ];
+
+        let enemies = [];
+        let projectiles = [];
+        let powerups = [];
+        let speedBoost = 1;
+        let boostTimer = 0;
+
+        const keys = {};
+
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (e.code === 'KeyM') toggleMusic();
+
+            if ((gameState === "title" || gameState === "gameover") && (e.code === 'Space')) {
+                resetGame();
+            }
+        });
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        function resetGame() {
+            player.x = 100;
+            player.y = 300;
+            player.health = 3;
+            player.dx = 0;
+            player.dy = 0;
+            score = 0;
+            speedBoost = 1;
+            projectiles = [];
+            enemies = [
+                { x: 320, y: 380, width: 55, height: 55, dx: -2.2, type: "patrol", color: "#8B4513", health: 1, alive: true },
+                { x: 720, y: 300, width: 52, height: 52, dx: 2.8, type: "chaser", color: "#9F1239", health: 1, alive: true, charge: 0 },
+                { x: 520, y: 220, width: 48, height: 48, dx: -1.8, type: "shooter", color: "#4F46E5", health: 1, alive: true, attackCooldown: 70 },
+                { x: 400, y: 120, width: 50, height: 45, dx: 2.5, dy: 0, type: "flyer", color: "#7C3AED", health: 1, alive: true, attackCooldown: 50 },
+                { x: 180, y: 380, width: 65, height: 65, dx: -1.1, type: "tank", color: "#166534", health: 3, alive: true },
+            ];
+            powerups = [
+                { x: 280, y: 200, width: 40, height: 50, active: true, type: "speed" },
+                { x: 720, y: 150, width: 40, height: 50, active: true, type: "score" },
+                { x: 480, y: 280, width: 40, height: 50, active: true, type: "speed" },
+            ];
+            gameState = "playing";
+            bgMusic.play().catch(() => {});
+        }
+
+        function drawBackground() {
+            ctx.fillStyle = '#16213e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#0f1b2e';
+            ctx.fillRect(0, 200, 120, 400);
+            ctx.fillRect(150, 150, 90, 450);
+            ctx.fillRect(280, 280, 110, 320);
+            ctx.fillRect(420, 100, 80, 500);
+            ctx.fillRect(720, 220, 150, 380);
+
+            ctx.fillStyle = '#ffcc00';
+            for (let i = 0; i < 8; i++) {
+                ctx.fillRect(30, 230 + i*45, 20, 25);
+                ctx.fillRect(70, 260 + i*45, 20, 25);
+            }
+        }
+
+        function updateEnemies() { /* Same as previous version */ 
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                if (enemy.type === "patrol" || enemy.type === "tank") {
+                    enemy.x += enemy.dx;
+                    if (enemy.x < 80 || enemy.x > 650) enemy.dx *= -1;
+                } else if (enemy.type === "chaser") {
+                    const dir = player.x > enemy.x ? 1 : -1;
+                    enemy.dx = dir * 3.4;
+                    enemy.x += enemy.dx;
+                } else if (enemy.type === "shooter") {
+                    enemy.x += enemy.dx;
+                    if (enemy.x < 100 || enemy.x > 780) enemy.dx *= -1;
+                    enemy.attackCooldown--;
+                    if (enemy.attackCooldown <= 0) {
+                        const dx = (player.x + player.width/2) - (enemy.x + enemy.width/2);
+                        const dy = (player.y + player.height/2) - (enemy.y + 20);
+                        const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                        projectiles.push({ x: enemy.x + enemy.width/2, y: enemy.y + 20, dx: (dx/dist)*5.8, dy: (dy/dist)*5.8, width:24, height:24, color:'#22ddff', homing:true, homingStrength:0.5 });
+                        enemy.attackCooldown = 65;
+                        playSound("shoot");
+                    }
+                } else if (enemy.type === "flyer") {
+                    enemy.x += enemy.dx;
+                    enemy.y += Math.sin(Date.now()/200) * 1.3;
+                    if (enemy.x < 100 || enemy.x > 750) enemy.dx *= -1;
+                    enemy.attackCooldown--;
+                    if (enemy.attackCooldown <= 0) {
+                        projectiles.push({ x: enemy.x + enemy.width/2, y: enemy.y + 22, dx: (player.x - enemy.x)*0.08, dy: (player.y - enemy.y)*0.08, width:18, height:18, color:'#f97316' });
+                        enemy.attackCooldown = 55;
+                        playSound("shoot");
+                    }
+                }
+            });
+        }
+
+        function updateProjectiles() { /* Same as before */ 
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                if (p.homing) {
+                    const tx = player.x + player.width/2;
+                    const ty = player.y + player.height/2;
+                    const dx = tx - (p.x + 12);
+                    const dy = ty - (p.y + 12);
+                    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                    p.dx += (dx/dist) * p.homingStrength;
+                    p.dy += (dy/dist) * p.homingStrength;
+                }
+                p.x += p.dx;
+                p.y += p.dy;
+
+                if (p.x < -100 || p.x > canvas.width + 100 || p.y > canvas.height + 100) {
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                if (!player.invincible && 
+                    player.x < p.x + p.width && player.x + player.width > p.x &&
+                    player.y < p.y + p.height && player.y + player.height > p.y) {
+                    player.health--;
+                    player.invincible = true;
+                    player.invincibleTime = 110;
+                    player.dy = -13;
+                    projectiles.splice(i, 1);
+                    playSound("hurt");
+                }
+            }
+        }
+
+        function update() {
+            if (gameState !== "playing") {
+                draw();
+                requestAnimationFrame(update);
+                return;
+            }
+
+            // Player movement
+            const currentSpeed = player.speed * speedBoost;
+            if (keys['KeyD'] || keys['ArrowRight']) player.dx = currentSpeed;
+            else if (keys['KeyA'] || keys['ArrowLeft']) player.dx = -currentSpeed;
+            else player.dx *= friction;
+
+            if ((keys['Space'] || keys['KeyW'] || keys['ArrowUp']) && player.grounded) {
+                player.dy = player.jumpPower;
+                player.grounded = false;
+                playSound("jump");
+            }
+
+            player.dy += gravity;
+            player.x += player.dx;
+            player.y += player.dy;
+
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+            player.grounded = false;
+            for (let p of platforms) {
+                if (player.x < p.x + p.width && player.x + player.width > p.x &&
+                    player.y + player.height > p.y && player.y + player.height - player.dy <= p.y) {
+                    player.y = p.y - player.height;
+                    player.dy = 0;
+                    player.grounded = true;
+                }
+            }
+
+            if (player.y + player.height > canvas.height - 60) {
+                player.y = canvas.height - 60 - player.height;
+                player.dy = 0;
+                player.grounded = true;
+            }
+
+            updateEnemies();
+            updateProjectiles();
+
+            // Enemy collisions
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                if (player.x < enemy.x + enemy.width && player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height && player.y + player.height > enemy.y) {
+                    if (player.dy > 0 && player.y + player.height - player.dy <= enemy.y + 30) {
+                        enemy.health--;
+                        player.dy = -13;
+                        playSound("stomp");
+                        if (enemy.health <= 0) {
+                            enemy.alive = false;
+                            score += enemy.type === "tank" ? 400 : 200;
+                        }
+                    } else if (!player.invincible) {
+                        player.health--;
+                        player.invincible = true;
+                        player.invincibleTime = 90;
+                        player.dy = -11;
+                        player.dx = player.x > enemy.x ? 10 : -10;
+                        playSound("hurt");
+                    }
+                }
+            });
+
+            // Power-ups
+            powerups.forEach(p => {
+                if (!p.active) return;
+                if (player.x < p.x + p.width && player.x + player.width > p.x &&
+                    player.y < p.y + p.height && player.y + player.height > p.y) {
+                    p.active = false;
+                    playSound("powerup");
+                    if (p.type === "speed") { speedBoost = 2.1; boostTimer = 300; }
+                    score += p.type === "speed" ? 100 : 400;
+                }
+            });
+
+            if (boostTimer > 0) { boostTimer--; if (boostTimer === 0) speedBoost = 1; }
+            if (player.invincibleTime > 0) player.invincibleTime--;
+
+            if (player.health <= 0) {
+                gameState = "gameover";
+                if (score > highScore) highScore = score;
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+
+            if (gameState === "title") {
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = "#ffd700";
+                ctx.font = "bold 72px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("SUPER SUDSY", canvas.width/2, 180);
+
+                ctx.fillStyle = "#00ddff";
+                ctx.font = "bold 36px Arial";
+                ctx.fillText("STARRING REH DOGG", canvas.width/2, 240);
+
+                ctx.fillStyle = "white";
+                ctx.font = "28px Arial";
+                ctx.fillText("Press SPACE to Start", canvas.width/2, 340);
+                ctx.font = "22px Arial";
+                ctx.fillText("A/D or Arrow Keys - Move", canvas.width/2, 390);
+                ctx.fillText("Space - Jump", canvas.width/2, 420);
+                return;
+            }
+
+            if (gameState === "gameover") {
+                ctx.fillStyle = "rgba(0,0,0,0.85)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = "#ff4444";
+                ctx.font = "bold 68px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("GAME OVER", canvas.width/2, 180);
+
+                ctx.fillStyle = "white";
+                ctx.font = "36px Arial";
+                ctx.fillText(`Final Score: ${score}`, canvas.width/2, 260);
+                ctx.fillText(`High Score: ${highScore}`, canvas.width/2, 310);
+
+                ctx.fillStyle = "#ffd700";
+                ctx.font = "28px Arial";
+                ctx.fillText("Press SPACE to Restart", canvas.width/2, 380);
+                return;
+            }
+
+            // Normal playing draw
+            // Platforms
+            ctx.fillStyle = '#555555';
+            for (let p of platforms) {
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+                ctx.fillStyle = '#777777';
+                ctx.fillRect(p.x, p.y, p.width, 8);
+                ctx.fillStyle = '#555555';
+            }
+
+            // Enemies, Projectiles, Power-ups, Player (same as before)
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(enemy.x + 12, enemy.y + 15, 12, 12);
+                ctx.fillRect(enemy.x + 32, enemy.y + 15, 12, 12);
+            });
+
+            projectiles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x + p.width/2, p.y + p.height/2, p.width/2, 0, Math.PI * 2);
+                ctx.fill();
+                if (p.homing) {
+                    ctx.fillStyle = '#c026d3';
+                    ctx.beginPath();
+                    ctx.arc(p.x + p.width/2, p.y + p.height/2, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            powerups.forEach(p => {
+                if (!p.active) return;
+                ctx.fillStyle = p.type === "speed" ? '#00ddff' : '#ffd700';
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 28px Arial';
+                ctx.fillText('🧴', p.x + 6, p.y + 38);
+            });
+
+            // Player
+            if (playerImg.complete) {
+                ctx.save();
+                if (player.dx < -1) {
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(playerImg, -player.x - player.width, player.y, player.width, player.height);
+                } else {
+                    ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+                }
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#00ccff';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+            }
+        }
+
+        // Start
+        bgMusic.volume = 0.45;
+        playerImg.onload = () => {
+            draw(); // Show title screen immediately
+        };
+        draw(); // Initial draw
+    </script>
+</body>
+</html>
