@@ -6,14 +6,15 @@
     <title>Super Sudsy</title>
     <style>
         body { margin:0; background:#0a0a1f; overflow:hidden; font-family:Arial; }
-        canvas { display:block; margin:10px auto; border:6px solid #ffd700; border-radius:12px; }
+        canvas { display:block; margin:10px auto; border:8px solid #ffd700; border-radius:12px; }
         .controls {
-            position:fixed; bottom:20px; left:0; right:0; display:flex; justify-content:space-between; padding:0 20px; z-index:100;
+            position:fixed; bottom:15px; left:0; right:0; display:flex; justify-content:space-between; padding:0 20px; z-index:100;
         }
         .btn {
             width:80px; height:80px; background:rgba(255,215,0,0.3); border:5px solid #ffd700;
             border-radius:50%; color:white; font-size:40px; display:flex; align-items:center; justify-content:center;
         }
+        .jump { background:rgba(0,221,255,0.4); border-color:#00ddff; }
     </style>
 </head>
 <body>
@@ -21,10 +22,10 @@
 
     <div class="controls" id="controls">
         <div style="display:flex; gap:15px;">
-            <div class="btn" id="left">←</div>
-            <div class="btn" id="right">→</div>
+            <div class="btn" id="leftBtn">←</div>
+            <div class="btn" id="rightBtn">→</div>
         </div>
-        <div class="btn" id="jump" style="background:rgba(0,221,255,0.4); border-color:#00ddff;">↑</div>
+        <div class="btn jump" id="jumpBtn">↑</div>
     </div>
 
     <script>
@@ -33,38 +34,81 @@
 
         function resize() {
             canvas.width = Math.min(window.innerWidth - 20, 800);
-            canvas.height = 450;
+            canvas.height = 480;
         }
         resize();
         window.addEventListener('resize', resize);
 
-        let x = 100, y = 300, dx = 0, dy = 0, grounded = true;
-        let touchLeft = false, touchRight = false;
+        // Player
+        const player = { x: 100, y: 200, width: 60, height: 80, dx: 0, dy: 0, speed: 6, jump: -15, grounded: false };
+
+        // Simple 5 platforms
+        const platforms = [
+            { x: 0,   y: 420, w: 300, h: 20 },
+            { x: 250, y: 340, w: 180, h: 20 },
+            { x: 480, y: 260, w: 150, h: 20 },
+            { x: 200, y: 180, w: 200, h: 20 },
+            { x: 550, y: 100, w: 200, h: 20 },
+        ];
+
+        let score = 0;
+        let gameState = "playing";
+
+        let touchLeft = false;
+        let touchRight = false;
 
         // Controls
-        document.getElementById('left').addEventListener('touchstart', () => touchLeft = true);
-        document.getElementById('left').addEventListener('touchend', () => touchLeft = false);
-        document.getElementById('right').addEventListener('touchstart', () => touchRight = true);
-        document.getElementById('right').addEventListener('touchend', () => touchRight = false);
-        document.getElementById('jump').addEventListener('touchstart', () => {
-            if (grounded) { dy = -15; grounded = false; }
+        document.getElementById('leftBtn').addEventListener('touchstart', () => touchLeft = true);
+        document.getElementById('leftBtn').addEventListener('touchend', () => touchLeft = false);
+        document.getElementById('rightBtn').addEventListener('touchstart', () => touchRight = true);
+        document.getElementById('rightBtn').addEventListener('touchend', () => touchRight = false);
+        document.getElementById('jumpBtn').addEventListener('touchstart', () => {
+            if (player.grounded) {
+                player.dy = player.jump;
+                player.grounded = false;
+            }
         });
 
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
         function update() {
+            if (gameState !== "playing") return;
+
             // Movement
-            if (touchRight || keys && keys['KeyD']) dx = 6;
-            else if (touchLeft || keys && keys['KeyA']) dx = -6;
-            else dx *= 0.8;
+            if (keys['KeyD'] || keys['ArrowRight'] || touchRight) player.dx = player.speed;
+            else if (keys['KeyA'] || keys['ArrowLeft'] || touchLeft) player.dx = -player.speed;
+            else player.dx *= 0.8;
 
-            dy += 0.8;           // gravity
-            x += dx;
-            y += dy;
+            player.dy += 0.7; // gravity
+            player.x += player.dx;
+            player.y += player.dy;
 
-            if (y > canvas.height - 80) {
-                y = canvas.height - 80;
-                dy = 0;
-                grounded = true;
+            // Platform collisions
+            player.grounded = false;
+            for (let p of platforms) {
+                if (
+                    player.x < p.x + p.w &&
+                    player.x + player.width > p.x &&
+                    player.y + player.height > p.y &&
+                    player.y + player.height - player.dy <= p.y
+                ) {
+                    player.y = p.y - player.height;
+                    player.dy = 0;
+                    player.grounded = true;
+                }
             }
+
+            // Floor
+            if (player.y + player.height > canvas.height - 40) {
+                player.y = canvas.height - 40 - player.height;
+                player.dy = 0;
+                player.grounded = true;
+            }
+
+            // Score (distance)
+            score = Math.floor(player.x / 5);
 
             draw();
             requestAnimationFrame(update);
@@ -74,25 +118,23 @@
             ctx.fillStyle = '#16213e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Ground
-            ctx.fillStyle = '#555';
-            ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+            // Platforms
+            ctx.fillStyle = '#ffd700';
+            for (let p of platforms) {
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+            }
 
             // Player
             ctx.fillStyle = '#00ccff';
-            ctx.fillRect(x, y, 60, 80);
+            ctx.fillRect(player.x, player.y, player.width, player.height);
 
+            // HUD
             ctx.fillStyle = 'white';
-            ctx.font = '20px Arial';
-            ctx.fillText('Super Sudsy Test', 20, 40);
+            ctx.font = 'bold 24px Arial';
+            ctx.fillText(`SCORE: ${score}`, 20, 40);
         }
 
-        // Keyboard support
-        const keys = {};
-        window.addEventListener('keydown', e => keys[e.code] = true);
-        window.addEventListener('keyup', e => keys[e.code] = false);
-
-        update();   // Start the game
+        update();
     </script>
 </body>
 </html>
