@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Super Sudsy</title>
     <style>
-        body { margin:0; background:#0a0a1f; overflow:hidden; }
+        body { margin:0; background:#0a0a1f; overflow:hidden; font-family:Arial; }
         canvas { display:block; margin:10px auto; border:8px solid #ffd700; border-radius:12px; }
         .controls {
             position:fixed; bottom:15px; left:0; right:0; display:flex; justify-content:space-between; 
@@ -21,7 +21,7 @@
 <body>
     <canvas id="gameCanvas"></canvas>
 
-    <div class="controls" id="controls">
+    <div class="controls">
         <div style="display:flex; gap:15px;">
             <div class="btn" id="leftBtn">←</div>
             <div class="btn" id="rightBtn">→</div>
@@ -40,16 +40,13 @@
         resize();
         window.addEventListener('resize', resize);
 
-        const player = { x: 100, y: 200, width: 70, height: 100, dx: 0, dy: 0, speed: 6, jumpPower: -15, grounded: false };
-
-        const playerImg = new Image();
-        playerImg.src = 'rehdogg-hero.PNG';
+        const player = { x: 100, y: 200, width: 60, height: 90, dx: 0, dy: 0, speed: 6, jumpPower: -15, grounded: false };
 
         const platforms = [
-            { x: 0,   y: 420, width: 350, height: 30 },
-            { x: 280, y: 340, width: 200, height: 25 },
-            { x: 520, y: 260, width: 180, height: 25 },
-            { x: 150, y: 180, width: 220, height: 25 },
+            { x: 0, y: 420, width: 400, height: 30 },
+            { x: 350, y: 340, width: 200, height: 25 },
+            { x: 550, y: 260, width: 180, height: 25 },
+            { x: 150, y: 180, width: 250, height: 25 },
             { x: 580, y: 120, width: 200, height: 25 },
         ];
 
@@ -74,7 +71,6 @@
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function update() {
-            // Movement
             if (keys['KeyD'] || keys['ArrowRight'] || touchRight) player.dx = player.speed;
             else if (keys['KeyA'] || keys['ArrowLeft'] || touchLeft) player.dx = -player.speed;
             else player.dx *= 0.82;
@@ -83,7 +79,6 @@
             player.x += player.dx;
             player.y += player.dy;
 
-            // Platform collision
             player.grounded = false;
             for (let p of platforms) {
                 if (player.x < p.x + p.width && player.x + player.width > p.x &&
@@ -94,14 +89,13 @@
                 }
             }
 
-            // Floor
             if (player.y + player.height > canvas.height - 40) {
                 player.y = canvas.height - 40 - player.height;
                 player.dy = 0;
                 player.grounded = true;
             }
 
-            score = Math.floor(player.x / 4);
+            score = Math.floor(player.x / 3);
             draw();
             requestAnimationFrame(update);
         }
@@ -116,15 +110,14 @@
                 ctx.fillRect(p.x, p.y, p.width, p.height);
             }
 
-            // Player (your image)
-            if (playerImg.complete) {
-                ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
-            } else {
-                ctx.fillStyle = '#00ccff';
-                ctx.fillRect(player.x, player.y, player.width, player.height);
-            }
+            // Simple Sudsy Hero (blue cape + body)
+            ctx.fillStyle = '#00aaff';
+            ctx.fillRect(player.x + 10, player.y + 20, 40, 60);     // body
+            ctx.fillStyle = '#ffd700';
+            ctx.fillRect(player.x + 5, player.y + 15, 50, 20);      // cape top
+            ctx.fillStyle = '#00ccff';
+            ctx.fillRect(player.x + 20, player.y + 10, 20, 25);     // head
 
-            // HUD
             ctx.fillStyle = 'white';
             ctx.font = 'bold 26px Arial';
             ctx.fillText(`SCORE: ${score}`, 25, 45);
