@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Super Sudsy</title>
     <style>
-        body { margin:0; background:#0a0a1f; overflow:hidden; font-family:Arial; }
+        body { margin:0; background:#0a0a1f; overflow:hidden; }
         canvas { display:block; margin:10px auto; border:8px solid #ffd700; border-radius:12px; }
         .controls {
-            position:fixed; bottom:15px; left:0; right:0; display:flex; justify-content:space-between; padding:0 20px; z-index:100;
+            position:fixed; bottom:15px; left:0; right:0; display:flex; justify-content:space-between; 
+            padding:0 20px; z-index:100;
         }
         .btn {
             width:80px; height:80px; background:rgba(255,215,0,0.3); border:5px solid #ffd700;
@@ -33,38 +34,37 @@
         const ctx = canvas.getContext('2d');
 
         function resize() {
-            canvas.width = Math.min(window.innerWidth - 20, 800);
+            canvas.width = Math.min(window.innerWidth - 20, 850);
             canvas.height = 480;
         }
         resize();
         window.addEventListener('resize', resize);
 
-        // Player
-        const player = { x: 100, y: 200, width: 60, height: 80, dx: 0, dy: 0, speed: 6, jump: -15, grounded: false };
+        const player = { x: 100, y: 200, width: 70, height: 100, dx: 0, dy: 0, speed: 6, jumpPower: -15, grounded: false };
 
-        // Simple 5 platforms
+        const playerImg = new Image();
+        playerImg.src = 'rehdogg-hero.PNG';
+
         const platforms = [
-            { x: 0,   y: 420, w: 300, h: 20 },
-            { x: 250, y: 340, w: 180, h: 20 },
-            { x: 480, y: 260, w: 150, h: 20 },
-            { x: 200, y: 180, w: 200, h: 20 },
-            { x: 550, y: 100, w: 200, h: 20 },
+            { x: 0,   y: 420, width: 350, height: 30 },
+            { x: 280, y: 340, width: 200, height: 25 },
+            { x: 520, y: 260, width: 180, height: 25 },
+            { x: 150, y: 180, width: 220, height: 25 },
+            { x: 580, y: 120, width: 200, height: 25 },
         ];
 
         let score = 0;
-        let gameState = "playing";
-
-        let touchLeft = false;
-        let touchRight = false;
+        let touchLeft = false, touchRight = false;
 
         // Controls
-        document.getElementById('leftBtn').addEventListener('touchstart', () => touchLeft = true);
+        document.getElementById('leftBtn').addEventListener('touchstart', e => {e.preventDefault(); touchLeft = true;});
         document.getElementById('leftBtn').addEventListener('touchend', () => touchLeft = false);
-        document.getElementById('rightBtn').addEventListener('touchstart', () => touchRight = true);
+        document.getElementById('rightBtn').addEventListener('touchstart', e => {e.preventDefault(); touchRight = true;});
         document.getElementById('rightBtn').addEventListener('touchend', () => touchRight = false);
-        document.getElementById('jumpBtn').addEventListener('touchstart', () => {
+        document.getElementById('jumpBtn').addEventListener('touchstart', e => {
+            e.preventDefault();
             if (player.grounded) {
-                player.dy = player.jump;
+                player.dy = player.jumpPower;
                 player.grounded = false;
             }
         });
@@ -74,26 +74,20 @@
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function update() {
-            if (gameState !== "playing") return;
-
             // Movement
             if (keys['KeyD'] || keys['ArrowRight'] || touchRight) player.dx = player.speed;
             else if (keys['KeyA'] || keys['ArrowLeft'] || touchLeft) player.dx = -player.speed;
-            else player.dx *= 0.8;
+            else player.dx *= 0.82;
 
-            player.dy += 0.7; // gravity
+            player.dy += 0.65;
             player.x += player.dx;
             player.y += player.dy;
 
-            // Platform collisions
+            // Platform collision
             player.grounded = false;
             for (let p of platforms) {
-                if (
-                    player.x < p.x + p.w &&
-                    player.x + player.width > p.x &&
-                    player.y + player.height > p.y &&
-                    player.y + player.height - player.dy <= p.y
-                ) {
+                if (player.x < p.x + p.width && player.x + player.width > p.x &&
+                    player.y + player.height > p.y && player.y + player.height - player.dy <= p.y) {
                     player.y = p.y - player.height;
                     player.dy = 0;
                     player.grounded = true;
@@ -107,9 +101,7 @@
                 player.grounded = true;
             }
 
-            // Score (distance)
-            score = Math.floor(player.x / 5);
-
+            score = Math.floor(player.x / 4);
             draw();
             requestAnimationFrame(update);
         }
@@ -119,19 +111,23 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Platforms
-            ctx.fillStyle = '#ffd700';
+            ctx.fillStyle = '#555555';
             for (let p of platforms) {
-                ctx.fillRect(p.x, p.y, p.w, p.h);
+                ctx.fillRect(p.x, p.y, p.width, p.height);
             }
 
-            // Player
-            ctx.fillStyle = '#00ccff';
-            ctx.fillRect(player.x, player.y, player.width, player.height);
+            // Player (your image)
+            if (playerImg.complete) {
+                ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+            } else {
+                ctx.fillStyle = '#00ccff';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+            }
 
             // HUD
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 24px Arial';
-            ctx.fillText(`SCORE: ${score}`, 20, 40);
+            ctx.font = 'bold 26px Arial';
+            ctx.fillText(`SCORE: ${score}`, 25, 45);
         }
 
         update();
